@@ -6,6 +6,8 @@ import Landing from './pages/Landing';
 import Onboarding from './pages/Onboarding';
 import Dashboard from './pages/Dashboard';
 import Transactions from './pages/Transactions';
+import Bills from './pages/Bills';
+import Advisor from './pages/Advisor';
 import Analytics from './pages/Analytics';
 import Budgets from './pages/Budgets';
 import Goals from './pages/Goals';
@@ -54,6 +56,8 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="transactions" element={<Transactions />} />
+        <Route path="bills" element={<Bills />} />
+        <Route path="advisor" element={<Advisor />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="budgets" element={<Budgets />} />
         <Route path="goals" element={<Goals />} />

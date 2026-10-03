@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDownCircle, ArrowUpCircle, ImagePlus, Loader2, Repeat, X } from 'lucide-react';
 import Modal from './Modal';
+import ReceiptScanner from './ReceiptScanner';
 import { useStore } from '../store/AppContext';
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, PAYMENT_METHODS } from '../data/categories';
 import { todayISO } from '../utils/format';
+import { parseQuickAdd } from '../utils/quickParse';
+import type { ReceiptData } from '../utils/receipt';
 
 const MAX_RECEIPT_BYTES = 2 * 1024 * 1024;
 
@@ -16,6 +19,7 @@ interface FormState {
   notes: string;
   recurring: boolean;
   receipt: string | null;
+  nature: '' | 'fixed' | 'variable';
 }
 
 export default function TransactionForm() {
@@ -31,6 +35,7 @@ export default function TransactionForm() {
     notes: '',
     recurring: false,
     receipt: null,
+    nature: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
@@ -48,6 +53,7 @@ export default function TransactionForm() {
         notes: editing?.notes ?? '',
         recurring: editing?.recurring ?? false,
         receipt: editing?.receipt ?? null,
+        nature: editing?.nature ?? '',
       });
       setErrors({});
       setSaving(false);
@@ -93,6 +99,25 @@ export default function TransactionForm() {
     return Object.keys(e).length === 0;
   };
 
+  /** Fill the form from a scanned receipt (user verifies before saving). */
+  const applyReceipt = (data: ReceiptData) => {
+    setForm((f) => {
+      const next = { ...f };
+      if (data.amount !== null) next.amount = String(data.amount);
+      if (data.title) {
+        next.title = data.title;
+        // guess a category from the merchant name when none is chosen yet
+        if (!next.category) {
+          const guess = parseQuickAdd(data.title);
+          if (guess.category && guess.category !== 'Other') next.category = guess.category;
+        }
+      }
+      if (data.date) next.date = data.date;
+      return next;
+    });
+    setErrors((e) => ({ ...e, amount: '', title: '', date: '' }));
+  };
+
   const submit = (ev: React.FormEvent) => {
     ev.preventDefault();
     if (!validate() || saving) return;
@@ -110,6 +135,7 @@ export default function TransactionForm() {
           notes: form.notes.trim(),
           receipt: form.receipt,
           recurring: form.recurring,
+          ...(isExpense && form.nature ? { nature: form.nature } : {}),
         };
         if (editing) {
           updateTransaction({ ...editing, ...payload });
@@ -168,6 +194,43 @@ export default function TransactionForm() {
       </div>
 
       <form onSubmit={submit} noValidate className="space-y-4">
+        {/* Fixed / variable (expenses only) */}
+        {isExpense && (
+          <div>
+            <span className="label" id="tx-nature-label">Spending type</span>
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-night-800" role="radiogroup" aria-labelledby="tx-nature-label">
+              {(
+                [
+                  { v: 'fixed', label: 'Fixed', hint: 'Rent, bills, subscriptions' },
+                  { v: 'variable', label: 'Variable', hint: 'Food, shopping, fun' },
+                ] as const
+              ).map((o) => {
+                const active = form.nature === o.v;
+                return (
+                  <button
+                    key={o.v}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => set('nature', active ? '' : o.v)}
+                    title={o.hint}
+                    className={`rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
+                      active
+                        ? 'bg-white text-slate-900 shadow-sm dark:bg-night-700 dark:text-white'
+                        : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {o.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+              Optional — helps analytics split fixed costs from flexible spending.
+            </p>
+          </div>
+        )}
+
         <div>
           <label htmlFor="tx-amount" className="label">
             Amount <span className="text-red-500">*</span>
@@ -279,6 +342,11 @@ export default function TransactionForm() {
         {/* Receipt */}
         <div>
           <span className="label">Receipt (optional)</span>
+          {isExpense && (
+            <div className="mb-2">
+              <ReceiptScanner onExtract={applyReceipt} notify={toast} />
+            </div>
+          )}
           {form.receipt ? (
             <div className="relative w-fit">
               <img

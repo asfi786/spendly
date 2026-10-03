@@ -4,14 +4,17 @@ import {
   ArrowLeftRight,
   BarChart3,
   CalendarDays,
+  CalendarClock,
   ChevronLeft,
   LayoutDashboard,
   LogOut,
   Minus,
   Moon,
+  MoreHorizontal,
   PiggyBank,
   Plus,
   Settings,
+  Sparkles,
   Sun,
   Target,
   TrendingDown,
@@ -25,6 +28,7 @@ import MonthPicker from './MonthPicker';
 import TransactionForm from './TransactionForm';
 import BudgetForm from './BudgetForm';
 import GoalForm from './GoalForm';
+import BillForm from './BillForm';
 import ContributeModal from './ContributeModal';
 import TxDetailModal from './TxDetailModal';
 import ConfirmModal from './ConfirmModal';
@@ -34,6 +38,8 @@ import { useStore } from '../store/AppContext';
 const NAV = [
   { to: '/app', end: true, label: 'Dashboard', icon: LayoutDashboard },
   { to: '/app/transactions', label: 'Transactions', icon: ArrowLeftRight },
+  { to: '/app/bills', label: 'Bills', icon: CalendarClock },
+  { to: '/app/advisor', label: 'Advisor', icon: Sparkles },
   { to: '/app/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/app/budgets', label: 'Budgets', icon: Wallet },
   { to: '/app/goals', label: 'Goals', icon: Target },
@@ -44,9 +50,17 @@ const NAV = [
 const MOBILE_TABS = [
   { to: '/app', end: true, label: 'Home', icon: LayoutDashboard },
   { to: '/app/transactions', label: 'Activity', icon: ArrowLeftRight },
-  { to: '/app/analytics', label: 'Insights', icon: BarChart3 },
+  { to: '/app/bills', label: 'Bills', icon: CalendarClock },
+  { to: '/app/advisor', label: 'Advisor', icon: Sparkles },
+  { to: null, label: 'More', icon: MoreHorizontal },
+];
+
+const MORE_ITEMS = [
+  { to: '/app/analytics', label: 'Analytics', icon: BarChart3 },
   { to: '/app/budgets', label: 'Budgets', icon: Wallet },
   { to: '/app/goals', label: 'Goals', icon: Target },
+  { to: '/app/calendar', label: 'Calendar', icon: CalendarDays },
+  { to: '/app/settings', label: 'Settings', icon: Settings },
 ];
 
 function ThemeToggle() {
@@ -67,7 +81,7 @@ function ThemeToggle() {
 }
 
 function AvatarMenu() {
-  const { state, logout, toast } = useStore();
+  const { state, auth, signOut, logout, toast } = useStore();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -83,6 +97,15 @@ function AvatarMenu() {
 
   const initial = (state.user.name || 'S').charAt(0).toUpperCase();
 
+  const onSignOutClick = () => {
+    setOpen(false);
+    if (auth) {
+      signOut();
+      return;
+    }
+    setConfirming(true);
+  };
+
   return (
     <div ref={ref} className="relative">
       <button
@@ -93,7 +116,7 @@ function AvatarMenu() {
         className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-sm font-bold text-white shadow-md transition-transform hover:scale-105"
       >
         {state.user.avatar ? (
-          <img src={state.user.avatar} alt="" className="h-full w-full object-cover" />
+          <img src={state.user.avatar} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
         ) : (
           initial
         )}
@@ -102,7 +125,7 @@ function AvatarMenu() {
         <div role="menu" className="card absolute right-0 z-50 mt-2 w-60 p-2 animate-scale-in">
           <div className="flex items-center gap-3 px-2.5 py-2.5">
             <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-brand-400 to-brand-600 text-sm font-bold text-white">
-              {state.user.avatar ? <img src={state.user.avatar} alt="" className="h-full w-full object-cover" /> : initial}
+              {state.user.avatar ? <img src={state.user.avatar} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" /> : initial}
             </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
@@ -111,6 +134,7 @@ function AvatarMenu() {
               <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                 {state.user.email || 'No email set'}
               </p>
+              {auth && <p className="chip mt-1 bg-brand-500/10 text-brand-700 dark:text-brand-300 !text-[10px]">Google account</p>}
             </div>
           </div>
           <div className="divider my-1 border-t" />
@@ -124,14 +148,16 @@ function AvatarMenu() {
           </Link>
           <button
             role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              setConfirming(true);
-            }}
+            onClick={onSignOutClick}
             className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium text-red-500 hover:bg-red-500/10"
           >
-            <LogOut size={16} aria-hidden /> Sign out
+            <LogOut size={16} aria-hidden /> {auth ? 'Sign out of Google' : 'Sign out'}
           </button>
+          {auth && (
+            <p className="px-2.5 pb-1.5 pt-1 text-[11px] text-slate-400 dark:text-slate-500">
+              Data for this Google profile stays saved on this device.
+            </p>
+          )}
         </div>
       )}
       <ConfirmModal
@@ -151,17 +177,65 @@ function AvatarMenu() {
   );
 }
 
+/** Bottom sheet for mobile "More" navigation. */
+function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const location = useLocation();
+  if (!open) return null;
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[1px] animate-fade-in lg:hidden"
+        onClick={onClose}
+        aria-hidden
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="More pages"
+        className="fixed inset-x-0 bottom-0 z-50 animate-slide-up rounded-t-3xl border-t divider bg-white p-4 pb-8 dark:bg-night-900 lg:hidden"
+      >
+        <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-slate-300 dark:bg-night-600" aria-hidden />
+        <ul className="grid grid-cols-2 gap-1.5">
+          {MORE_ITEMS.map((item) => {
+            const active = location.pathname === item.to;
+            return (
+              <li key={item.to}>
+                <NavLink
+                  to={item.to}
+                  onClick={onClose}
+                  className={`flex items-center gap-3 rounded-2xl px-4 py-3.5 text-sm font-semibold transition-colors ${
+                    active
+                      ? 'bg-brand-500/10 text-brand-700 dark:text-brand-300'
+                      : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-night-800'
+                  }`}
+                >
+                  <item.icon size={19} aria-hidden className="shrink-0" />
+                  {item.label}
+                </NavLink>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+    </>
+  );
+}
+
 export default function AppShell() {
   const { openTxForm, openBudgetForm, openGoalForm, state } = useStore();
   const [collapsed, setCollapsed] = useState(false);
   const [fabOpen, setFabOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const location = useLocation();
 
   // Close FAB sheet + scroll to top on navigation
   useEffect(() => {
     setFabOpen(false);
+    setMoreOpen(false);
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [location.pathname]);
+
+  const moreActive = MORE_ITEMS.some((m) => location.pathname === m.to);
 
   const quickActions = [
     { label: 'Add Expense', icon: TrendingDown, color: 'text-red-500', bg: 'bg-red-500/10', fn: () => openTxForm('expense') },
@@ -203,6 +277,14 @@ export default function AppShell() {
         </nav>
         <div className="border-t divider p-3">
           <div className={`flex items-center gap-3 ${collapsed ? 'flex-col' : ''}`}>
+            {state.user.avatar && !collapsed && (
+              <img
+                src={state.user.avatar}
+                alt=""
+                className="h-9 w-9 shrink-0 rounded-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+            )}
             <button
               onClick={() => setCollapsed((c) => !c)}
               aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
@@ -221,6 +303,11 @@ export default function AppShell() {
               </div>
             )}
           </div>
+          {!collapsed && (
+            <p className="mt-2 px-1 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+              Crafted by Asfund Ali
+            </p>
+          )}
         </div>
       </aside>
 
@@ -271,23 +358,43 @@ export default function AppShell() {
         style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
       >
         <div className="grid grid-cols-5 px-1">
-          {MOBILE_TABS.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.end}
-              className={({ isActive }) =>
-                `flex flex-col items-center gap-1 rounded-xl px-1 py-2.5 text-[10px] font-semibold transition-colors ${
-                  isActive ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'
-                }`
-              }
-            >
-              <item.icon size={21} aria-hidden />
-              {item.label}
-            </NavLink>
-          ))}
+          {MOBILE_TABS.map((item) => {
+            if (item.to === null) {
+              return (
+                <button
+                  key="more"
+                  onClick={() => setMoreOpen(true)}
+                  aria-haspopup="dialog"
+                  aria-expanded={moreOpen}
+                  className={`flex flex-col items-center gap-1 rounded-xl px-1 py-2.5 text-[10px] font-semibold transition-colors ${
+                    moreActive ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'
+                  }`}
+                >
+                  <item.icon size={21} aria-hidden />
+                  {item.label}
+                </button>
+              );
+            }
+            return (
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                className={({ isActive }) =>
+                  `flex flex-col items-center gap-1 rounded-xl px-1 py-2.5 text-[10px] font-semibold transition-colors ${
+                    isActive ? 'text-brand-600 dark:text-brand-400' : 'text-slate-400 dark:text-slate-500'
+                  }`
+                }
+              >
+                <item.icon size={21} aria-hidden />
+                {item.label}
+              </NavLink>
+            );
+          })}
         </div>
       </nav>
+
+      <MoreSheet open={moreOpen} onClose={() => setMoreOpen(false)} />
 
       {/* ============ FAB + quick actions ============ */}
       {fabOpen && (
@@ -331,6 +438,7 @@ export default function AppShell() {
       <TransactionForm />
       <BudgetForm />
       <GoalForm />
+      <BillForm />
       <ContributeModal />
       <TxDetailModal />
       <ToastHost />
