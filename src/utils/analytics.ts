@@ -187,6 +187,65 @@ export function buildInsights(txs: Transaction[], month: string, currency: Curre
         tone: 'neutral',
       });
     }
+    // top spending day of the week
+    const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dowSpend = new Array<number>(7).fill(0);
+    for (const t of cur) {
+      if (t.type !== 'expense') continue;
+      dowSpend[new Date(t.date + 'T12:00:00').getDay()] += t.amount;
+    }
+    const topDowIdx = dowSpend.indexOf(Math.max(...dowSpend));
+    const dowTotal = dowSpend.reduce((a, b) => a + b, 0);
+    if (dowTotal > 0 && dowSpend[topDowIdx] > 0) {
+      const pct = (dowSpend[topDowIdx] / dowTotal) * 100;
+      insights.push({
+        id: 'dow',
+        icon: 'calendar',
+        title: `${DOW[topDowIdx]}s cost you the most`,
+        body: `You spend the most on ${DOW[topDowIdx]}s — ${pct.toFixed(0)}% of this month's total.`,
+        tone: 'neutral',
+      });
+    }
+    // fixed vs variable split
+    const marked = cur.filter((t) => t.type === 'expense' && t.nature);
+    if (marked.length >= 3) {
+      const fixed = marked.filter((t) => t.nature === 'fixed').reduce((s, t) => s + t.amount, 0);
+      const total = marked.reduce((s, t) => s + t.amount, 0);
+      const fixedPct = total > 0 ? (fixed / total) * 100 : 0;
+      insights.push({
+        id: 'fixed-variable',
+        icon: 'wallet',
+        title: 'Fixed vs variable split',
+        body: `${fixedPct.toFixed(0)}% of your marked spending is fixed costs, ${(
+          100 - fixedPct
+        ).toFixed(0)}% is flexible. Trimming variable costs is the fastest way to save more.`,
+        tone: 'neutral',
+      });
+    }
+    // heaviest spending day
+    const byDay = new Map<string, number>();
+    for (const t of cur) {
+      if (t.type !== 'expense') continue;
+      byDay.set(t.date, (byDay.get(t.date) ?? 0) + t.amount);
+    }
+    let heavyDay: string | null = null;
+    let heavyAmt = 0;
+    for (const [d, a] of byDay) {
+      if (a > heavyAmt) {
+        heavyAmt = a;
+        heavyDay = d;
+      }
+    }
+    if (heavyDay && byDay.size >= 3) {
+      const d = new Date(heavyDay + 'T12:00:00');
+      insights.push({
+        id: 'heavy-day',
+        icon: 'trend-up',
+        title: 'Heaviest spending day',
+        body: `${d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })} was your priciest day this month — ${formatMoney(heavyAmt, currency)} in total.`,
+        tone: 'neutral',
+      });
+    }
   }
 
   if (curInc > 0 && curExp > 0) {
