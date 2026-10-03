@@ -22,6 +22,36 @@ import {
   Zap,
 } from 'lucide-react';
 import Logo from '../components/Logo';
+import GoogleSignInButton from '../components/GoogleSignInButton';
+import InstallModal from '../components/InstallModal';
+import { getClientId } from '../utils/google';
+import { canInstall, isStandalone, promptInstall } from '../utils/pwa';
+
+/** Install button for the landing page: native prompt when available, instructions otherwise. */
+function LandingInstallButton({ variant = 'secondary' }: { variant?: 'secondary' | 'white' }) {
+  const [showModal, setShowModal] = useState(false);
+  const [installed] = useState(() => isStandalone());
+  if (installed) return null;
+  const cls =
+    variant === 'white'
+      ? 'btn w-full !border-white/40 !px-7 !py-3.5 !text-white hover:!bg-white/10 sm:w-auto'
+      : 'btn-secondary w-full !px-7 !py-3.5 text-base sm:w-auto';
+  const onClick = async () => {
+    if (!canInstall()) {
+      setShowModal(true);
+      return;
+    }
+    await promptInstall();
+  };
+  return (
+    <>
+      <button onClick={onClick} className={cls}>
+        <Download size={18} aria-hidden /> Install App
+      </button>
+      <InstallModal open={showModal} onClose={() => setShowModal(false)} />
+    </>
+  );
+}
 
 /* ---------------- JSON-LD ---------------- */
 function JsonLd() {
@@ -135,11 +165,11 @@ function DashboardMockup() {
 const FAQS = [
   {
     q: 'Is Spendly really free?',
-    a: 'Yes. There is no account, no subscription and no paywall. Every feature — transactions, budgets, goals, analytics, exports — is available to everyone.',
+    a: 'Yes. There is no subscription and no paywall. Every feature — transactions, budgets, goals, analytics, exports — is available to everyone. Google sign-in is optional and also free.',
   },
   {
     q: 'Where is my financial data stored?',
-    a: 'Entirely in your own browser (local storage on your device). Nothing is uploaded to a server, so your spending data never leaves your hands. The trade-off: clearing your browser data erases it, so use the export feature for backups.',
+    a: 'Entirely in your own browser (local storage on your device). Nothing is uploaded to a server, so your spending data never leaves your hands. Google sign-in is identity only — it just labels your data per profile. The trade-off: clearing your browser data erases it, so use the export feature for backups.',
   },
   {
     q: 'Can I use Spendly on my phone?',
@@ -155,7 +185,7 @@ const FAQS = [
   },
   {
     q: 'Does Spendly give financial advice?',
-    a: 'No. Insights are computed purely from the data you enter (e.g. "Food is 24% of your spending"). Spendly never makes predictions or investment recommendations.',
+    a: 'The Advisor page shows smart tips computed from your own data (e.g. "Food is 24% of your spending", budget-breach warnings, savings-rate coaching). You can also connect your own OpenAI key for deeper AI advice — your key stays in your browser and only anonymized summaries are ever sent, only when you ask.',
   },
 ];
 
@@ -267,6 +297,11 @@ export default function Landing() {
                 <Play size={18} aria-hidden /> View Demo
               </Link>
             </div>
+            {getClientId() && (
+              <div className="mt-5 flex justify-center">
+                <GoogleSignInButton />
+              </div>
+            )}
             <div className="mx-auto mt-12 max-w-4xl animate-fade-up">
               <DashboardMockup />
             </div>
@@ -299,13 +334,13 @@ export default function Landing() {
 
         {/* Highlights band */}
         <section className="border-y divider bg-slate-50 dark:bg-night-900">
-          <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-4 py-16 sm:px-6 md:grid-cols-3">
+          <div className="mx-auto grid max-w-6xl grid-cols-1 gap-10 px-4 py-14 sm:px-6 sm:py-16 md:grid-cols-3 md:gap-0 md:divide-x md:divide-slate-200/80 dark:md:divide-night-700/70">
             {[
               { icon: Moon, title: 'Beautiful dark mode', desc: 'A properly designed dark theme — not just inverted colors — that remembers your preference.' },
               { icon: Download, title: 'Your data, portable', desc: 'Export to CSV or JSON, import it back, or wipe it clean. No lock-in, ever.' },
               { icon: Lock, title: 'No account needed', desc: 'Open Spendly and start tracking. Nothing to sign up for, nothing to verify.' },
             ].map((h) => (
-              <div key={h.title} className="flex gap-4">
+              <div key={h.title} className="flex gap-4 md:items-start md:px-8 md:first:pl-0 md:last:pr-0">
                 <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-white text-brand-600 shadow-card dark:bg-night-800 dark:text-brand-400">
                   <h.icon size={20} aria-hidden />
                 </span>
@@ -356,6 +391,7 @@ export default function Landing() {
               <Link to="/onboarding?demo=1" className="btn w-full !border-white/40 !px-7 !py-3.5 !text-white hover:!bg-white/10 sm:w-auto">
                 View Demo
               </Link>
+              <LandingInstallButton variant="white" />
             </div>
           </div>
         </section>
@@ -410,7 +446,7 @@ export default function Landing() {
           </div>
           <div className="mt-10 flex flex-col items-center justify-between gap-3 border-t divider pt-6 text-xs text-slate-400 dark:text-slate-500 sm:flex-row">
             <p>© {new Date().getFullYear()} Spendly. All rights reserved.</p>
-            <p>Made for people who want to understand their money.</p>
+            <p className="font-semibold text-slate-500 dark:text-slate-400">Crafted by Asfund Ali</p>
           </div>
         </div>
       </footer>

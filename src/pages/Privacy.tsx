@@ -1,27 +1,37 @@
 import { Link } from 'react-router-dom';
-import { ArrowLeft, Database, Eye, Lock, Trash2 } from 'lucide-react';
+import { ArrowLeft, Bot, Database, Eye, Lock, Trash2, UserCheck } from 'lucide-react';
 import Logo from '../components/Logo';
 
 const SECTIONS = [
   {
     icon: Database,
     title: 'What we store',
-    body: 'Everything you enter into Spendly — your name, transactions, budgets, goals and preferences — is stored exclusively in your browser\u2019s local storage on your own device. We operate no servers for user data, so there is nothing to breach, sell or subpoena on our end because we simply don\u2019t have it.',
+    body: 'Everything you enter into Spendly — your name, transactions, budgets, goals, bills and preferences — is stored exclusively in your browser\u2019s local storage on your own device. We operate no servers for user data, so there is nothing to breach, sell or subpoena on our end because we simply don\u2019t have it.',
   },
   {
     icon: Eye,
     title: 'What we don\u2019t collect',
-    body: 'We don\u2019t ask you to create an account, we don\u2019t set tracking cookies, and we don\u2019t run analytics that follow you around. The demo data toggle, theme and currency choices are stored locally too, for your convenience only.',
+    body: 'We don\u2019t require an account, we don\u2019t set tracking cookies, and we don\u2019t run analytics that follow you around. The demo data toggle, theme and currency choices are stored locally too, for your convenience only.',
+  },
+  {
+    icon: UserCheck,
+    title: 'Google sign-in (optional, identity only)',
+    body: 'If you enable Google sign-in and sign in, Spendly receives only your basic Google profile (name, email and profile photo) to identify you. That is all Google shares with us, and it is all we store about your identity. Your financial data still never leaves your browser — signing in simply namespaces your data per Google profile so multiple people sharing one device keep separate data. We never send your transactions, budgets or goals to Google.',
+  },
+  {
+    icon: Bot,
+    title: 'AI advice (optional, only when you ask)',
+    body: 'The Advisor page works out of the box with smart tips computed entirely in your browser. If you choose to add your own OpenAI API key, the key stays in your browser\u2019s local storage and is never logged. When — and only when — you press \u201cGenerate AI advice\u201d, Spendly sends an anonymized summary (monthly totals by category, budget usage, goal progress — no names, notes, titles or other identifiers) to api.openai.com to produce the advice. Nothing is sent to OpenAI at any other time.',
   },
   {
     icon: Lock,
     title: 'Receipts and photos',
-    body: 'If you attach a receipt photo or a profile picture, the image is stored as data inside your browser\u2019s local storage alongside your other data. It is never uploaded anywhere.',
+    body: 'If you attach a receipt photo or a profile picture, the image is stored as data inside your browser\u2019s local storage alongside your other data. Receipt scanning (OCR) also runs entirely in your browser using an on-device library — receipt images are never uploaded anywhere.',
   },
   {
     icon: Trash2,
     title: 'Deleting your data',
-    body: 'You can remove everything at any time from Settings \u2192 Your data \u2192 Clear all data (with a typed confirmation). Signing out also clears your local data. Clearing your browser\u2019s site data will erase it as well — use the CSV/JSON export feature to keep backups.',
+    body: 'You can remove everything at any time from Settings \u2192 Your data \u2192 Clear all data (with a typed confirmation). Signing out of the app also clears your local data; signing out of Google keeps each profile\u2019s data saved but switches you back to anonymous mode. Clearing your browser\u2019s site data will erase it as well — use the CSV/JSON export feature to keep backups.',
   },
 ];
 
@@ -49,8 +59,9 @@ export default function Privacy() {
         <div className="card mt-8 border-brand-500/30 bg-brand-500/[0.06] p-5 dark:border-brand-500/30">
           <p className="text-sm font-semibold leading-relaxed text-slate-800 dark:text-slate-100">
             The short version: Spendly is designed so that your financial data never leaves your
-            device. There is no account, no cloud sync and no tracking — because there is nowhere
-            for your data to go.
+            device. There is no cloud sync and no tracking — the only exceptions are entirely
+            optional: Google sign-in (identity only) and AI advice (anonymized summaries, only
+            when you press Generate).
           </p>
         </div>
 

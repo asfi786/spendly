@@ -25,13 +25,18 @@ export interface Transaction {
   receipt: string | null; // dataURL
   recurring: boolean;
   createdAt: string; // ISO
+  nature?: 'fixed' | 'variable'; // expense only; older data simply lacks it
 }
+
+export type BudgetPeriod = 'monthly' | 'yearly';
 
 export interface Budget {
   id: string;
   category: string;
   amount: number;
-  month: string; // yyyy-MM
+  month: string; // yyyy-MM (used when period === 'monthly')
+  period: BudgetPeriod;
+  year: string; // yyyy (used when period === 'yearly')
   createdAt: string;
 }
 
@@ -56,12 +61,43 @@ export interface NotificationPrefs {
   dailyReminder: boolean;
 }
 
+export type BillFrequency = 'weekly' | 'monthly' | 'yearly' | 'once';
+
+export interface BillPayment {
+  id: string;
+  paidAt: string; // ISO
+  transactionId: string;
+  amount: number;
+  skipped?: boolean;
+}
+
+export interface Bill {
+  id: string;
+  title: string;
+  amount: number;
+  category: string;
+  frequency: BillFrequency;
+  dayOfMonth: number; // 1-28 preferred for monthly/yearly
+  nextDue: string | null; // yyyy-MM-dd; null = completed (once bills)
+  notes: string;
+  createdAt: string; // ISO
+  history: BillPayment[];
+}
+
+export interface GoogleProfile {
+  googleId: string;
+  name: string;
+  email: string;
+  avatar: string | null;
+}
+
 export interface AppState {
   onboarded: boolean;
   user: UserProfile;
   transactions: Transaction[];
   budgets: Budget[];
   goals: Goal[];
+  bills: Bill[];
   notifications: NotificationPrefs;
   demoData: boolean;
   selectedMonth: string; // yyyy-MM

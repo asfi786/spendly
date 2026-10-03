@@ -9,21 +9,43 @@ import React, {
 } from 'react';
 import type {
   AppState,
+  Bill,
   Budget,
   CurrencyCode,
   Goal,
+  GoogleProfile,
   NotificationPrefs,
   ThemePref,
   Transaction,
   TxType,
   UserProfile,
 } from '../types';
-import { currentMonthKey, formatMoney, formatMoneyCompact, uid } from '../utils/format';
-import { buildDemoBudgets, buildDemoGoals, buildDemoTransactions } from '../data/demoData';
+import { currentMonthKey, formatMoney, formatMoneyCompact, todayISO, uid } from '../utils/format';
+import { advanceBillDue } from '../utils/bills';
+import { buildDemoBills, buildDemoBudgets, buildDemoGoals, buildDemoTransactions } from '../data/demoData';
+
+/* ================= Storage ================= */
+
+const AUTH_KEY = 'spendly:auth';
+const LEGACY_KEY = 'spendly:v1'; // anonymous / pre-Google data
+
+/** Namespaced state key so each Google profile keeps separate data on one browser. */
+export function stateKeyFor(googleId: string | null): string {
+  return googleId ? `spendly:v1:g:${googleId}` : LEGACY_KEY;
+}
+
+function loadAuth(): GoogleProfile | null {
+  try {
+    const raw = localStorage.getItem(AUTH_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as GoogleProfile;
+    return p && typeof p.googleId === 'string' ? p : null;
+  } catch {
+    return null;
+  }
+}
 
 /* ================= State ================= */
-
-const STORAGE_KEY = 'spendly:v1';
 
 function defaultUser(): UserProfile {
   return {
@@ -43,25 +65,35 @@ function defaultState(): AppState {
     transactions: [],
     budgets: [],
     goals: [],
+    bills: [],
     notifications: { budgetAlerts: true, dailyReminder: false },
     demoData: false,
     selectedMonth: currentMonthKey(),
   };
 }
 
-function loadState(): AppState {
+/** Schema-tolerant load: old saved states (without bills / budget periods) still load. */
+function loadState(key: string): AppState {
   const base = defaultState();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return base;
-    const parsed = JSON.parse(raw) as Partial<AppState>;
+    const parsed = JSON.parse(raw) as Partial<AppState> & { budgets?: any[] };
+    const budgets = Array.isArray(parsed.budgets)
+      ? parsed.budgets.map((b: any) => ({
+          period: b.period === 'yearly' ? 'yearly' : 'monthly',
+          year: typeof b.year === 'string' ? b.year : String(b.month ?? '').slice(0, 4) || new Date().getFullYear().toString(),
+          ...b,
+        }))
+      : [];
     return {
       ...base,
       ...parsed,
       user: { ...base.user, ...(parsed.user ?? {}) },
       transactions: Array.isArray(parsed.transactions) ? parsed.transactions : [],
-      budgets: Array.isArray(parsed.budgets) ? parsed.budgets : [],
+      budgets,
       goals: Array.isArray(parsed.goals) ? parsed.goals : [],
+      bills: Array.isArray((parsed as any).bills) ? (parsed as any).bills : [],
       notifications: { ...base.notifications, ...(parsed.notifications ?? {}) },
       selectedMonth: typeof parsed.selectedMonth === 'string' ? parsed.selectedMonth : currentMonthKey(),
     };
@@ -70,9 +102,21 @@ function loadState(): AppState {
   }
 }
 
+function hasMeaningfulData(s: AppState): boolean {
+  return (
+    s.onboarded ||
+    s.transactions.length > 0 ||
+    s.budgets.length > 0 ||
+    s.goals.length > 0 ||
+    s.bills.length > 0 ||
+    s.user.name !== ''
+  );
+}
+
 /* ================= Actions ================= */
 
 type Action =
+  | { type: 'HYDRATE'; state: AppState }
   | { type: 'SET_ONBOARDED'; value: boolean }
   | { type: 'UPDATE_PROFILE'; patch: Partial<UserProfile> }
   | { type: 'SET_CURRENCY'; currency: CurrencyCode }
@@ -87,6 +131,10 @@ type Action =
   | { type: 'UPDATE_GOAL'; goal: Goal }
   | { type: 'DELETE_GOAL'; id: string }
   | { type: 'ADD_CONTRIBUTION'; goalId: string; amount: number; date: string }
+  | { type: 'ADD_BILL'; bill: Bill }
+  | { type: 'UPDATE_BILL'; bill: Bill }
+  | { type: 'DELETE_BILL'; id: string }
+  | { type: 'BILL_ADVANCE'; billId: string; nextDue: string | null; payment: Bill['history'][number] }
   | { type: 'SET_NOTIFICATIONS'; patch: Partial<NotificationPrefs> }
   | { type: 'LOAD_DEMO' }
   | { type: 'CLEAR_DEMO' }
@@ -96,6 +144,8 @@ type Action =
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
+    case 'HYDRATE':
+      return action.state;
     case 'SET_ONBOARDED':
       return { ...state, onboarded: action.value };
     case 'UPDATE_PROFILE':
@@ -147,6 +197,24 @@ function reducer(state: AppState, action: Action): AppState {
             : g,
         ),
       };
+    case 'ADD_BILL':
+      return { ...state, bills: [action.bill, ...state.bills] };
+    case 'UPDATE_BILL':
+      return {
+        ...state,
+        bills: state.bills.map((b) => (b.id === action.bill.id ? action.bill : b)),
+      };
+    case 'DELETE_BILL':
+      return { ...state, bills: state.bills.filter((b) => b.id !== action.id) };
+    case 'BILL_ADVANCE':
+      return {
+        ...state,
+        bills: state.bills.map((b) =>
+          b.id === action.billId
+            ? { ...b, nextDue: action.nextDue, history: [action.payment, ...b.history] }
+            : b,
+        ),
+      };
     case 'SET_NOTIFICATIONS':
       return { ...state, notifications: { ...state.notifications, ...action.patch } };
     case 'LOAD_DEMO':
@@ -156,9 +224,10 @@ function reducer(state: AppState, action: Action): AppState {
         transactions: buildDemoTransactions(),
         budgets: buildDemoBudgets(),
         goals: buildDemoGoals(),
+        bills: buildDemoBills(),
       };
     case 'CLEAR_DEMO':
-      return { ...state, demoData: false, transactions: [], budgets: [], goals: [] };
+      return { ...state, demoData: false, transactions: [], budgets: [], goals: [], bills: [] };
     case 'IMPORT_TXS':
       return { ...state, transactions: [...action.txs, ...state.transactions], demoData: false };
     case 'SET_MONTH':
@@ -192,6 +261,11 @@ interface StoreContextValue {
   toast: (message: string, kind?: Toast['kind']) => void;
   dismissToast: (id: string) => void;
 
+  // Google auth (identity only — financial data stays local)
+  auth: GoogleProfile | null;
+  signInWithGoogle: (profile: GoogleProfile) => void;
+  signOut: () => void;
+
   setOnboarded: (v: boolean) => void;
   updateProfile: (patch: Partial<UserProfile>) => void;
   setCurrency: (c: CurrencyCode) => void;
@@ -210,6 +284,12 @@ interface StoreContextValue {
   updateGoal: (g: Goal) => void;
   deleteGoal: (id: string) => void;
   addContribution: (goalId: string, amount: number, date: string) => void;
+
+  addBill: (b: Omit<Bill, 'id' | 'createdAt' | 'history'>) => void;
+  updateBill: (b: Bill) => void;
+  deleteBill: (id: string) => void;
+  markBillPaid: (bill: Bill) => void;
+  skipBill: (bill: Bill) => void;
 
   setNotifications: (patch: Partial<NotificationPrefs>) => void;
   loadDemo: () => void;
@@ -238,12 +318,18 @@ interface StoreContextValue {
   txDetail: { open: boolean; tx: Transaction | null };
   openTxDetail: (tx: Transaction) => void;
   closeTxDetail: () => void;
+  billForm: { open: boolean; editing: Bill | null };
+  openBillForm: (editing?: Bill | null) => void;
+  closeBillForm: () => void;
 }
 
 const StoreContext = createContext<StoreContextValue | null>(null);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [state, dispatch] = useReducer(reducer, undefined, loadState);
+  const [auth, setAuth] = useState<GoogleProfile | null>(loadAuth);
+  const [state, dispatch] = useReducer(reducer, undefined, () =>
+    loadState(stateKeyFor(loadAuth()?.googleId ?? null)),
+  );
   const [toasts, setToasts] = useState<Toast[]>([]);
 
   const [txForm, setTxForm] = useState<TxFormState>({ open: false, txType: 'expense', editing: null });
@@ -263,21 +349,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     open: false,
     tx: null,
   });
+  const [billForm, setBillForm] = useState<{ open: boolean; editing: Bill | null }>({
+    open: false,
+    editing: null,
+  });
 
-  /* Persist */
+  const profileId = auth?.googleId ?? null;
+
+  /* Persist to the active profile's namespace */
   useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      localStorage.setItem(stateKeyFor(profileId), JSON.stringify(state));
     } catch {
       /* storage full / unavailable — app still works in-memory */
     }
-  }, [state]);
+  }, [state, profileId]);
 
   /* Toasts */
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
-
   const toast = useCallback(
     (message: string, kind: Toast['kind'] = 'success') => {
       const id = uid('toast');
@@ -286,6 +377,64 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     },
     [dismissToast],
   );
+
+  /* Service-worker update announcements (dispatched from main.tsx via initPwa) */
+  useEffect(() => {
+    const onUpdate = () => toast('New version available — refresh to update.', 'info');
+    window.addEventListener('spendly:sw-update', onUpdate);
+    return () => window.removeEventListener('spendly:sw-update', onUpdate);
+  }, [toast]);
+
+  /* ---- Google auth ---- */
+
+  const signInWithGoogle = useCallback(
+    (profile: GoogleProfile) => {
+      const targetKey = stateKeyFor(profile.googleId);
+      let migrated = false;
+      try {
+        const existing = localStorage.getItem(targetKey);
+        if (!existing) {
+          // First sign-in for this Google profile: migrate anonymous data if it exists.
+          const anonRaw = localStorage.getItem(LEGACY_KEY);
+          if (anonRaw) {
+            const anon = loadState(LEGACY_KEY);
+            if (hasMeaningfulData(anon)) {
+              localStorage.setItem(targetKey, anonRaw);
+              migrated = true;
+            }
+          }
+        }
+        localStorage.setItem(AUTH_KEY, JSON.stringify(profile));
+      } catch {
+        /* best effort */
+      }
+      setAuth(profile);
+      const next = loadState(targetKey);
+      // Fill empty profile fields from Google identity (never overwrite user's edits)
+      const patch: Partial<UserProfile> = {};
+      if (!next.user.name && profile.name) patch.name = profile.name;
+      if (!next.user.email && profile.email) patch.email = profile.email;
+      if (!next.user.avatar && profile.avatar) patch.avatar = profile.avatar;
+      dispatch({ type: 'HYDRATE', state: { ...next, user: { ...next.user, ...patch } } });
+      toast(
+        migrated
+          ? 'Signed in with Google. Your existing data was moved to this profile.'
+          : `Signed in as ${profile.name || profile.email}.`,
+      );
+    },
+    [toast],
+  );
+
+  const signOut = useCallback(() => {
+    try {
+      localStorage.removeItem(AUTH_KEY);
+    } catch {
+      /* noop */
+    }
+    setAuth(null);
+    dispatch({ type: 'HYDRATE', state: loadState(LEGACY_KEY) });
+    toast('Signed out of Google. Your data stays saved on this device.', 'info');
+  }, [toast]);
 
   /* Theme resolution */
   const [systemDark, setSystemDark] = useState(
@@ -311,18 +460,23 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
   const moneyCompact = useCallback((n: number) => formatMoneyCompact(n, state.user.currency), [state.user.currency]);
 
-  /* Budget alert check */
+  /* Budget alert check (monthly + yearly) */
   const checkBudgetAlert = useCallback(
     (tx: Transaction, allTxs: Transaction[], budgets: Budget[]) => {
       if (tx.type !== 'income' && state.notifications.budgetAlerts) {
-        const month = tx.date.slice(0, 7);
-        const b = budgets.find((x) => x.month === month && x.category === tx.category);
+        const b = budgets.find((x) => {
+          if (x.category !== tx.category) return false;
+          if (x.period === 'yearly') return x.year === tx.date.slice(0, 4);
+          return x.month === tx.date.slice(0, 7);
+        });
         if (b) {
-          const spent = allTxs
-            .filter((t) => t.type === 'expense' && t.date.slice(0, 7) === month && t.category === tx.category)
-            .reduce((s, t) => s + t.amount, 0);
+          const inScope = (t: Transaction) =>
+            t.type === 'expense' &&
+            t.category === b.category &&
+            (b.period === 'yearly' ? t.date.slice(0, 4) === b.year : t.date.slice(0, 7) === b.month);
+          const spent = allTxs.filter(inScope).reduce((s, t) => s + t.amount, 0);
           const pct = b.amount > 0 ? (spent / b.amount) * 100 : 0;
-          if (pct >= 100) toast(`You've exceeded your ${b.category} budget for this month.`, 'warning');
+          if (pct >= 100) toast(`You've exceeded your ${b.category} budget.`, 'warning');
           else if (pct >= 80) toast(`Heads up: ${b.category} budget is ${Math.round(pct)}% used.`, 'info');
         }
       }
@@ -336,6 +490,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       toasts,
       toast,
       dismissToast,
+
+      auth,
+      signInWithGoogle,
+      signOut,
 
       setOnboarded: (v) => dispatch({ type: 'SET_ONBOARDED', value: v }),
       updateProfile: (patch) => dispatch({ type: 'UPDATE_PROFILE', patch }),
@@ -366,6 +524,53 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       deleteGoal: (id) => dispatch({ type: 'DELETE_GOAL', id }),
       addContribution: (goalId, amount, date) => dispatch({ type: 'ADD_CONTRIBUTION', goalId, amount, date }),
 
+      addBill: (input) =>
+        dispatch({
+          type: 'ADD_BILL',
+          bill: { ...input, id: uid('bill'), createdAt: new Date().toISOString(), history: [] },
+        }),
+      updateBill: (b) => dispatch({ type: 'UPDATE_BILL', bill: b }),
+      deleteBill: (id) => dispatch({ type: 'DELETE_BILL', id }),
+      markBillPaid: (bill) => {
+        if (!bill.nextDue) return;
+        const tx: Transaction = {
+          id: uid('tx'),
+          createdAt: new Date().toISOString(),
+          type: 'expense',
+          amount: bill.amount,
+          title: bill.title,
+          category: bill.category,
+          date: todayISO(),
+          paymentMethod: 'Bank',
+          notes: bill.notes ? `Bill payment — ${bill.notes}` : 'Bill payment',
+          receipt: null,
+          recurring: false,
+          nature: 'fixed',
+        };
+        const next = [tx, ...state.transactions];
+        dispatch({ type: 'ADD_TX', tx });
+        const nextDue = advanceBillDue(bill.nextDue, bill.frequency, bill.dayOfMonth);
+        dispatch({
+          type: 'BILL_ADVANCE',
+          billId: bill.id,
+          nextDue,
+          payment: { id: uid('bp'), paidAt: new Date().toISOString(), transactionId: tx.id, amount: bill.amount },
+        });
+        checkBudgetAlert(tx, next, state.budgets);
+        toast(nextDue ? `Bill paid. Next due ${nextDue}.` : 'Bill paid and completed.');
+      },
+      skipBill: (bill) => {
+        if (!bill.nextDue) return;
+        const nextDue = advanceBillDue(bill.nextDue, bill.frequency, bill.dayOfMonth);
+        dispatch({
+          type: 'BILL_ADVANCE',
+          billId: bill.id,
+          nextDue,
+          payment: { id: uid('bp'), paidAt: new Date().toISOString(), transactionId: '', amount: bill.amount, skipped: true },
+        });
+        toast(nextDue ? `Bill skipped. Next due ${nextDue}.` : 'Bill skipped.', 'info');
+      },
+
       setNotifications: (patch) => dispatch({ type: 'SET_NOTIFICATIONS', patch }),
       loadDemo: () => dispatch({ type: 'LOAD_DEMO' }),
       clearDemo: () => dispatch({ type: 'CLEAR_DEMO' }),
@@ -373,14 +578,30 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       setMonth: (m) => dispatch({ type: 'SET_MONTH', month: m }),
       clearAll: () => {
         try {
-          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(stateKeyFor(profileId));
         } catch {
           /* noop */
         }
         dispatch({ type: 'CLEAR_ALL' });
       },
       logout: () => {
-        dispatch({ type: 'CLEAR_ALL' });
+        if (profileId) {
+          // Google session: sign out but keep all data
+          try {
+            localStorage.removeItem(AUTH_KEY);
+          } catch {
+            /* noop */
+          }
+          setAuth(null);
+          dispatch({ type: 'HYDRATE', state: loadState(LEGACY_KEY) });
+        } else {
+          try {
+            localStorage.removeItem(LEGACY_KEY);
+          } catch {
+            /* noop */
+          }
+          dispatch({ type: 'CLEAR_ALL' });
+        }
       },
 
       money,
@@ -401,12 +622,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       txDetail,
       openTxDetail: (tx) => setTxDetail({ open: true, tx }),
       closeTxDetail: () => setTxDetail((s) => ({ ...s, open: false })),
+      billForm,
+      openBillForm: (editing = null) => setBillForm({ open: true, editing }),
+      closeBillForm: () => setBillForm((s) => ({ ...s, open: false })),
     }),
     [
       state,
       toasts,
       toast,
       dismissToast,
+      auth,
+      signInWithGoogle,
+      signOut,
       resolvedTheme,
       money,
       moneyCompact,
@@ -415,7 +642,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       goalForm,
       contributeGoal,
       txDetail,
+      billForm,
       checkBudgetAlert,
+      profileId,
     ],
   );
 
