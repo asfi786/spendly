@@ -1,5 +1,5 @@
-import type { Budget, Goal, Transaction } from '../types';
-import { currentMonthKey, shiftMonth, uid } from '../utils/format';
+import type { Bill, Budget, Goal, Transaction } from '../types';
+import { currentMonthKey, shiftMonth, toISODate, uid } from '../utils/format';
 
 /**
  * Realistic PKR demo data across the last 3 months.
@@ -83,10 +83,39 @@ export function buildDemoTransactions(): Transaction[] {
 
 export function buildDemoBudgets(): Budget[] {
   const month = currentMonthKey();
+  const year = month.slice(0, 4);
   return [
-    { id: uid('bd'), category: 'Food', amount: 20000, month, createdAt: new Date().toISOString() },
-    { id: uid('bd'), category: 'Transport', amount: 10000, month, createdAt: new Date().toISOString() },
-    { id: uid('bd'), category: 'Entertainment', amount: 8000, month, createdAt: new Date().toISOString() },
+    { id: uid('bd'), category: 'Food', amount: 20000, month, period: 'monthly', year, createdAt: new Date().toISOString() },
+    { id: uid('bd'), category: 'Transport', amount: 10000, month, period: 'monthly', year, createdAt: new Date().toISOString() },
+    { id: uid('bd'), category: 'Entertainment', amount: 8000, month, period: 'monthly', year, createdAt: new Date().toISOString() },
+    { id: uid('bd'), category: 'Travel', amount: 120000, month, period: 'yearly', year, createdAt: new Date().toISOString() },
+  ];
+}
+
+export function buildDemoBills(): Bill[] {
+  const now = new Date();
+  const iso = (d: Date) => toISODate(d);
+  const mk = (title: string, amount: number, category: string, freq: Bill['frequency'], daysFromNow: number, notes = '') => {
+    const due = new Date(now);
+    due.setDate(now.getDate() + daysFromNow);
+    return {
+      id: uid('bill'),
+      title,
+      amount,
+      category,
+      frequency: freq,
+      dayOfMonth: due.getDate(),
+      nextDue: iso(due),
+      notes,
+      createdAt: new Date().toISOString(),
+      history: [],
+    } as Bill;
+  };
+  return [
+    mk('House Rent', 35000, 'Bills', 'monthly', 6, 'Pay before the 10th'),
+    mk('Electricity Bill', 4850, 'Bills', 'monthly', 3),
+    mk('Internet Package', 3500, 'Bills', 'monthly', 12),
+    mk('Netflix Subscription', 999, 'Entertainment', 'monthly', 20),
   ];
 }
 

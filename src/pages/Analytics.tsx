@@ -20,6 +20,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useStore } from '../store/AppContext';
+import Heatmap from '../components/Heatmap';
 import SpendingChart from '../components/SpendingChart';
 import MonthPicker from '../components/MonthPicker';
 import EmptyState from '../components/EmptyState';
@@ -131,6 +132,13 @@ export default function Analytics() {
               </div>
             </section>
           )}
+
+          {/* Spending heatmap */}
+          <section className="card p-5 animate-fade-up" aria-label="Spending heatmap">
+            <h3 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Spending heatmap</h3>
+            <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">Daily spending intensity · last 120 days</p>
+            <Heatmap />
+          </section>
 
           {/* Trends */}
           <div className="card p-5 animate-fade-up">

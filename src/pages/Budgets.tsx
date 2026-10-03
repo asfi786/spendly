@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { AlertTriangle, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
+import { AlertTriangle, ChevronLeft, ChevronRight, Pencil, Plus, Trash2, Wallet } from 'lucide-react';
 import { useStore } from '../store/AppContext';
 import MonthPicker from '../components/MonthPicker';
 import EmptyState from '../components/EmptyState';
@@ -8,7 +8,7 @@ import CategoryIcon from '../components/CategoryIcon';
 import { categoryColor, categoryIcon } from '../data/categories';
 import { formatMonthKey } from '../utils/format';
 import { txInMonth } from '../utils/analytics';
-import type { Budget } from '../types';
+import type { Budget, BudgetPeriod } from '../types';
 
 type Health = 'healthy' | 'near' | 'over';
 
@@ -27,20 +27,38 @@ const HEALTH_STYLES: Record<Health, { bar: string; chip: string; label: string }
 export default function Budgets() {
   const { state, money, openBudgetForm, deleteBudget, toast } = useStore();
   const [deleting, setDeleting] = useState<Budget | null>(null);
+  const [tab, setTab] = useState<BudgetPeriod>('monthly');
   const month = state.selectedMonth;
+  const [year, setYear] = useState(month.slice(0, 4));
 
-  const budgets = useMemo(() => state.budgets.filter((b) => b.month === month), [state.budgets, month]);
+  const isMonthly = tab === 'monthly';
+  const scopeLabel = isMonthly ? formatMonthKey(month) : year;
+
+  const budgets = useMemo(
+    () =>
+      state.budgets.filter((b) =>
+        isMonthly
+          ? (b.period ?? 'monthly') === 'monthly' && b.month === month
+          : b.period === 'yearly' && (b.year ?? b.month.slice(0, 4)) === year,
+      ),
+    [state.budgets, isMonthly, month, year],
+  );
 
   const rows = useMemo(
     () =>
       budgets.map((b) => {
         const spent = state.transactions
-          .filter((t) => t.type === 'expense' && txInMonth(t, month) && t.category === b.category)
+          .filter(
+            (t) =>
+              t.type === 'expense' &&
+              t.category === b.category &&
+              (isMonthly ? txInMonth(t, month) : t.date.slice(0, 4) === year),
+          )
           .reduce((s, t) => s + t.amount, 0);
         const pct = b.amount > 0 ? (spent / b.amount) * 100 : 0;
         return { budget: b, spent, pct, health: healthOf(pct), remaining: b.amount - spent };
       }),
-    [budgets, state.transactions, month],
+    [budgets, state.transactions, isMonthly, month, year],
   );
 
   const overCount = rows.filter((r) => r.health === 'over').length;
@@ -52,16 +70,69 @@ export default function Budgets() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="page-title">Budgets</h1>
-          <p className="page-subtitle">Monthly spending limits · {formatMonthKey(month)}</p>
+          <p className="page-subtitle">
+            {isMonthly ? 'Monthly spending limits' : 'Yearly spending limits'} · {scopeLabel}
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <div className="lg:hidden">
-            <MonthPicker compact />
-          </div>
+          <div className="lg:hidden">{isMonthly && <MonthPicker compact />}</div>
           <button className="btn-primary btn-sm !py-2" onClick={() => openBudgetForm()}>
             <Plus size={15} aria-hidden /> New budget
           </button>
         </div>
+      </div>
+
+      {/* Period tabs + scope controls */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          className="inline-flex gap-1 rounded-xl bg-slate-100 p-1 dark:bg-night-800"
+          role="tablist"
+          aria-label="Budget period"
+        >
+          {(['monthly', 'yearly'] as const).map((p) => {
+            const active = tab === p;
+            return (
+              <button
+                key={p}
+                role="tab"
+                aria-selected={active}
+                onClick={() => setTab(p)}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold capitalize transition-all ${
+                  active
+                    ? 'bg-white text-slate-900 shadow-sm dark:bg-night-700 dark:text-white'
+                    : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+                }`}
+              >
+                {p}
+              </button>
+            );
+          })}
+        </div>
+        {isMonthly ? (
+          <div className="hidden lg:block">
+            <MonthPicker />
+          </div>
+        ) : (
+          <div className="flex items-center gap-1" aria-label="Choose year">
+            <button
+              className="btn-ghost btn-sm !px-2"
+              onClick={() => setYear((y) => String(Number(y) - 1))}
+              aria-label="Previous year"
+            >
+              <ChevronLeft size={15} aria-hidden />
+            </button>
+            <span className="min-w-[64px] text-center text-sm font-bold tabular-nums text-slate-700 dark:text-slate-200">
+              {year}
+            </span>
+            <button
+              className="btn-ghost btn-sm !px-2"
+              onClick={() => setYear((y) => String(Number(y) + 1))}
+              aria-label="Next year"
+            >
+              <ChevronRight size={15} aria-hidden />
+            </button>
+          </div>
+        )}
       </div>
 
       {overCount > 0 && (
@@ -79,7 +150,7 @@ export default function Budgets() {
                 .filter((r) => r.health === 'over')
                 .map((r) => r.budget.category)
                 .join(', ')}{' '}
-              {overCount === 1 ? 'is' : 'are'} over the limit this month. Consider adjusting spending or the budget.
+              {overCount === 1 ? 'is' : 'are'} over the limit {isMonthly ? 'this month' : 'this year'}. Consider adjusting spending or the budget.
             </p>
           </div>
         </div>
@@ -88,9 +159,13 @@ export default function Budgets() {
       {budgets.length === 0 ? (
         <EmptyState
           icon={Wallet}
-          title="No budgets for this month"
-          body="Set a monthly limit per category and Spendly will warn you before you overspend. Budgets reset every month."
-          actionLabel="Create your first budget"
+          title={isMonthly ? 'No budgets for this month' : `No budgets for ${year}`}
+          body={
+            isMonthly
+              ? 'Set a monthly limit per category and Spendly will warn you before you overspend. Budgets reset every month.'
+              : 'Set a yearly limit per category — great for travel, gifts and annual plans. Spending is aggregated across the whole year.'
+          }
+          actionLabel={isMonthly ? 'Create your first budget' : 'Create a yearly budget'}
           onAction={() => openBudgetForm()}
         />
       ) : (
@@ -126,6 +201,7 @@ export default function Budgets() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
             {rows.map(({ budget: b, spent, pct, health, remaining }, i) => {
               const hs = HEALTH_STYLES[health];
+              const period = b.period ?? 'monthly';
               return (
                 <div key={b.id} className="card card-hover p-5 animate-fade-up" style={{ animationDelay: `${i * 50}ms` }}>
                   <div className="flex items-start justify-between">
@@ -133,7 +209,9 @@ export default function Budgets() {
                       <CategoryIcon icon={categoryIcon(b.category, 'expense')} color={categoryColor(b.category, 'expense')} />
                       <div>
                         <h3 className="text-sm font-bold text-slate-900 dark:text-white">{b.category}</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">{formatMonthKey(b.month)}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          {period === 'monthly' ? formatMonthKey(b.month) : `${b.year ?? b.month.slice(0, 4)} · yearly`}
+                        </p>
                       </div>
                     </div>
                     <span className={`chip ${hs.chip}`}>{hs.label}</span>
@@ -188,7 +266,11 @@ export default function Budgets() {
           }
         }}
         title="Delete budget?"
-        message={deleting ? `The ${deleting.category} budget for ${formatMonthKey(deleting.month)} will be removed.` : ''}
+        message={
+          deleting
+            ? `The ${deleting.category} budget (${(deleting.period ?? 'monthly') === 'monthly' ? formatMonthKey(deleting.month) : `${deleting.year ?? deleting.month.slice(0, 4)} (yearly)`}) will be removed.`
+            : ''
+        }
         confirmLabel="Delete"
         danger
       />

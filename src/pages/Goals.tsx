@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
-import { CalendarDays, Pencil, Plus, Target, Trash2 } from 'lucide-react';
+import { CalendarDays, CheckCircle2, Pencil, Plus, Target, TrendingUp, Trash2, TriangleAlert } from 'lucide-react';
 import { useStore } from '../store/AppContext';
 import EmptyState from '../components/EmptyState';
 import ConfirmModal from '../components/ConfirmModal';
 import { formatDate } from '../utils/format';
+import { computeGoalStats } from '../utils/goals';
 import type { Goal } from '../types';
 
 export default function Goals() {
@@ -47,6 +48,7 @@ export default function Goals() {
           {goals.map((g, i) => {
             const pct = g.targetAmount > 0 ? Math.min(100, (g.currentAmount / g.targetAmount) * 100) : 0;
             const complete = g.currentAmount >= g.targetAmount;
+            const stats = computeGoalStats(g);
             const daysLeft = Math.ceil(
               (new Date(g.targetDate).getTime() - new Date().setHours(0, 0, 0, 0)) / 86400000,
             );
@@ -107,6 +109,50 @@ export default function Goals() {
                 <p className="mt-1.5 text-xs font-semibold tabular-nums text-slate-500 dark:text-slate-400">
                   {pct.toFixed(0)}% {complete && <span className="text-brand-600 dark:text-brand-400">· Complete!</span>}
                 </p>
+
+                {/* Dynamic saving plan */}
+                {!complete && (
+                  <div className="mt-3 space-y-2 rounded-xl bg-slate-50 p-3 text-xs dark:bg-night-800/70">
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-500 dark:text-slate-400">Required / month</span>
+                      <span className="font-extrabold tabular-nums text-slate-900 dark:text-white">
+                        {money(stats.requiredMonthly)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium text-slate-500 dark:text-slate-400">Pace</span>
+                      {stats.paceStatus === 'on-track' ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-brand-600 dark:text-brand-400">
+                          <CheckCircle2 size={13} aria-hidden /> On track
+                        </span>
+                      ) : stats.paceStatus === 'behind' ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-amber-600 dark:text-amber-400">
+                          <TriangleAlert size={13} aria-hidden /> Behind
+                        </span>
+                      ) : stats.overdue ? (
+                        <span className="font-bold text-red-500">Deadline passed</span>
+                      ) : (
+                        <span className="font-bold text-slate-500 dark:text-slate-400">No contributions yet</span>
+                      )}
+                    </div>
+                    {stats.paceStatus === 'behind' && stats.catchUpMonthly !== null && stats.catchUpMonthly > 0 && (
+                      <p className="font-semibold leading-relaxed text-amber-700 dark:text-amber-400">
+                        Save {money(stats.catchUpMonthly)} more/month to catch up.
+                      </p>
+                    )}
+                    <div className="flex items-center justify-between border-t divider pt-2">
+                      <span className="font-medium text-slate-500 dark:text-slate-400">
+                        <TrendingUp size={12} className="mr-1 inline" aria-hidden />
+                        Projected completion
+                      </span>
+                      <span className="font-bold tabular-nums text-slate-700 dark:text-slate-200">
+                        {stats.projectedDate
+                          ? formatDate(stats.projectedDate)
+                          : '—'}
+                      </span>
+                    </div>
+                  </div>
+                )}
 
                 {g.contributions.length > 0 && (
                   <ul className="mt-3 space-y-1 border-t divider pt-3 text-xs">

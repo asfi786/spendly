@@ -15,6 +15,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { useStore } from '../store/AppContext';
+import QuickAdd from '../components/QuickAdd';
 import SummaryCard from '../components/SummaryCard';
 import SpendingChart from '../components/SpendingChart';
 import CategoryDonut from '../components/CategoryDonut';
@@ -25,6 +26,7 @@ import { PageSkeleton } from '../components/Skeleton';
 import { categoryColor, categoryIcon } from '../data/categories';
 import { formatDate, greetingForHour, pctChange, shiftMonth } from '../utils/format';
 import { sumByType, txInMonth } from '../utils/analytics';
+import { dueLabel, upcomingBills } from '../utils/bills';
 
 /* Show skeletons only on the first dashboard visit of the session */
 let dashboardBootstrapped = false;
@@ -43,7 +45,7 @@ function useBootLoad(ms = 550): boolean {
 }
 
 export default function Dashboard() {
-  const { state, money, moneyCompact, openTxForm, openBudgetForm, openGoalForm, openTxDetail, loadDemo, clearDemo, toast } =
+  const { state, money, moneyCompact, openTxForm, openBudgetForm, openGoalForm, openTxDetail, openBillForm, loadDemo, clearDemo, toast } =
     useStore();
   const navigate = useNavigate();
   const loading = useBootLoad();
@@ -73,7 +75,12 @@ export default function Dashboard() {
     [state.transactions],
   );
 
-  const monthBudgets = useMemo(() => state.budgets.filter((b) => b.month === month).slice(0, 3), [state.budgets, month]);
+  const monthBudgets = useMemo(
+    () => state.budgets.filter((b) => (b.period ?? 'monthly') === 'monthly' && b.month === month).slice(0, 3),
+    [state.budgets, month],
+  );
+
+  const upcomingBillsTop = useMemo(() => upcomingBills(state.bills).slice(0, 3), [state.bills]);
 
   const greeting = greetingForHour(new Date().getHours());
   const firstName = state.user.name.split(' ')[0] || 'there';
@@ -140,6 +147,9 @@ export default function Dashboard() {
           </button>
         </div>
       </div>
+
+      {/* Quick add — text & voice */}
+      <QuickAdd />
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -301,8 +311,10 @@ export default function Dashboard() {
               </ul>
             </div>
 
+            {/* Right column: budgets + upcoming bills */}
+            <div className="space-y-4 xl:col-span-2">
             {/* Budgets preview */}
-            <div className="card p-5 animate-fade-up xl:col-span-2" style={{ animationDelay: '80ms' }}>
+            <div className="card p-5 animate-fade-up" style={{ animationDelay: '80ms' }}>
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Budgets</h3>
                 <Link
@@ -381,6 +393,59 @@ export default function Dashboard() {
                   })}
                 </div>
               )}
+            </div>
+
+            {/* Upcoming bills widget */}
+            <div className="card p-5 animate-fade-up" style={{ animationDelay: '140ms' }}>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-base font-bold tracking-tight text-slate-900 dark:text-white">Upcoming bills</h3>
+                <Link
+                  to="/app/bills"
+                  className="flex items-center gap-1 text-sm font-semibold text-brand-600 hover:text-brand-700 dark:text-brand-400"
+                >
+                  View all <ArrowRight size={15} aria-hidden />
+                </Link>
+              </div>
+              {upcomingBillsTop.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-6 text-center">
+                  <CalendarClock size={24} className="mb-2 text-slate-300 dark:text-slate-600" aria-hidden />
+                  <p className="text-sm text-slate-500 dark:text-slate-400">No upcoming bills.</p>
+                  <button className="btn-secondary btn-sm mt-3" onClick={() => openBillForm()}>
+                    <Plus size={14} aria-hidden /> Track a bill
+                  </button>
+                </div>
+              ) : (
+                <ul className="space-y-2.5">
+                  {upcomingBillsTop.map((b) => {
+                    const due = dueLabel(b.nextDue);
+                    const tone =
+                      due.tone === 'overdue'
+                        ? 'text-red-500'
+                        : due.tone === 'soon'
+                          ? 'text-amber-600 dark:text-amber-400'
+                          : 'text-slate-400 dark:text-slate-500';
+                    return (
+                      <li key={b.id} className="flex items-center gap-3">
+                        <CategoryIcon
+                          icon={categoryIcon(b.category, 'expense')}
+                          color={categoryColor(b.category, 'expense')}
+                          size={16}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">
+                            {b.title}
+                          </p>
+                          <p className={`text-xs font-medium ${tone}`}>{due.text}</p>
+                        </div>
+                        <span className="text-sm font-bold tabular-nums text-slate-900 dark:text-white">
+                          {money(b.amount)}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
             </div>
           </div>
 
